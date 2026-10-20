@@ -119,12 +119,13 @@ public class CustomerSupportAssistant {
 	 * 核心聊天入口
 	 */
 	//Flux 是 Spring WebFlux（响应式编程） 里的绝对核心。可以把它简单粗暴地理解为：“支持异步、且能分多次吐数据的水管”
-	public Flux<String> chat(String chatId, String userMessageContent) {
+    public Flux<String> chat(String chatId, String userMessageContent) { return chatAuthenticated(chatId,userMessageContent,null); }
+    public Flux<String> chatAuthenticated(String chatId, String userMessageContent, ai.spring.demo.ai.playground.auth.UserIdentity identity) {
 
 		// 【第一道防线：确认拦截】
 		// 如果用户输入“确认”、“是”，直接走后端代码执行，绝对不传给大模型。
 		if (OperationConfirmationService.isConfirmation(userMessageContent)) {
-			return rememberReply(chatId, userMessageContent, confirmations.confirm(chatId));
+			return rememberReply(chatId, userMessageContent, confirmations.confirm(chatId, identity));
 		}
 
 		// 【第二道防线：撤销拦截】
@@ -153,10 +154,16 @@ public class CustomerSupportAssistant {
 			return Flux.just(BookingInputGuard.MISSING);
 		}
 
+        Map<String,Object> toolContext = new java.util.HashMap<>();
+        toolContext.put(BookingInputGuard.CONTEXT_KEY, numbers);
+        toolContext.put(OperationConfirmationService.CHAT, chatId);
+        toolContext.put(OperationConfirmationService.TURN, turn);
+        if (identity != null) toolContext.put(ai.spring.demo.ai.playground.auth.UserIdentity.TOOL_CONTEXT_KEY, identity);
+
 		// ================= 请求百炼大模型 =================
 		return this.chatClient.prompt()
 				// 把订单号授权信息传给工具
-				.toolContext(Map.of(BookingInputGuard.CONTEXT_KEY, numbers, OperationConfirmationService.CHAT, chatId, OperationConfirmationService.TURN, turn))
+				.toolContext(toolContext)
 				// 动态把当前日期和抓取到的姓名塞进提示词里
 				.system(s -> s.param("current_date", LocalDate.now().toString())
 						.param("provided_name", BookingInputGuard.providedName(chatMemory.get(chatId), userMessageContent)))

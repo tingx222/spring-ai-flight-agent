@@ -25,6 +25,9 @@ public class BookingTools {
     @Autowired
     private OperationConfirmationService confirmations;
 
+    @Autowired(required = false)
+    private ai.spring.demo.ai.playground.auth.BookingAccessService access;
+
     // ================== 定义 AI 传给工具的“请求参数格式” ==================
 
     public record BookingDetailsRequest(String bookingNumber, String name) {}
@@ -58,8 +61,10 @@ public class BookingTools {
                 return new BookingLookupResult(false, BookingInputGuard.MISSING, null);
             }
             try {
-                return new BookingLookupResult(true, "查询成功。",
-                        flightBookingService.getBookingDetails(request.bookingNumber(), request.name()));
+                var booking = access == null ? flightBookingService.getBookingDetails(request.bookingNumber(), request.name()) :
+                    access.execute(access.identity(context), request.bookingNumber(),
+                        () -> flightBookingService.getBookingDetails(request.bookingNumber(), request.name()));
+                return new BookingLookupResult(true, "查询成功。", booking);
             }
             catch (IllegalArgumentException e) {
                 // 如果查不到，返回友好的中文提示给 AI，不让底层报错直接崩溃。

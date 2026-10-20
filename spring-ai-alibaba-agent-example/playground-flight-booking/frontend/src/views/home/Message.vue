@@ -21,7 +21,7 @@ let message = defineProps<MessageItem>();
             background: white;
           "
         >
-          <markdown :source="message.content"></markdown>
+          <markdown :source="message.content" :html="false"></markdown>
           <!--          <p>-->
           <!--            {{ message.content }}-->
           <!--          </p>-->

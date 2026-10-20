@@ -7,6 +7,7 @@ import org.springframework.web.bind.annotation.*;
 /** 本机演示查询入口，与现有订单接口一样尚无登录鉴权。 */
 @RestController
 @RequestMapping("/api/booking-audits")
+@org.springframework.context.annotation.Profile("!secure")
 public class BookingAuditController {
     private final FlightBookingService service;
     public BookingAuditController(FlightBookingService service) { this.service = service; }

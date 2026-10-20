@@ -20,12 +20,12 @@
               <a-input
                 @keydown.enter="forHelp"
                 v-model:value="question"
-                placeholder="Message"
+                placeholder="例如：云小宝，101，改签到10月22日"
               ></a-input>
             </a-col>
             <a-col :span="4">
               <a-button @click="forHelp" :disabled="lock" type="primary"
-                >Send</a-button
+                >发送</a-button
               >
             </a-col>
           </a-row>
@@ -36,7 +36,7 @@
           <template #title>
             <label style="font-size: 25px">机票预定信息</label>
           </template>
-          <a-table
+          <a-table row-key="bookingNumber"
             :data-source="bookingInfo.dataSource"
             :columns="bookingInfo.columns"
             :pagination="false"
@@ -66,8 +66,11 @@
 
 <script setup lang="ts">
 import { PRIMARY_COLOR } from "@/base/constants";
-import { nextTick, onMounted, reactive, ref } from "vue";
-import { getBookings } from "@/api/service/booking";
+import { nextTick, onMounted, onUnmounted, reactive, ref } from "vue";
+import { api, json, consumeChat } from "@/auth";
+const props = defineProps<{ legacy?: boolean }>();
+const abort = new AbortController();
+onUnmounted(() => abort.abort());
 import { Icon } from "@iconify/vue";
 import Message from "@/views/home/Message.vue";
 import MessageList from "@/views/home/MessageList.vue";
@@ -155,38 +158,29 @@ function appendMessage(content: string) {
 
 const chatId = uuidv4();
 
-function forHelp() {
-  if (lock.value) {
-    message.warn("助手正在生成, 请耐心等候");
-    return;
-  }
-  let userMessage = question.value.trim();
+async function forHelp() {
+  if (lock.value) return;
+  const userMessage = question.value.trim();
   if (!userMessage) return;
-  lock.value = true;
-  addMessage("user", userMessage);
-  question.value = "";
-  const eventSource = new EventSource(
-    `/api/assistant/chat?chatId=${encodeURIComponent(chatId)}&userMessage=${encodeURIComponent(userMessage)}`,
-    {},
-  );
-  eventSource.onopen = function (event) {
-    addMessage("assistant", "");
-  };
-  eventSource.onmessage = function (event) {
-    lock.value = true;
-    appendMessage(event.data);
-  };
-  eventSource.onerror = function () {
-    eventSource.close();
-    bookings();
-    lock.value = false;
-  };
+  lock.value = true; addMessage("user", userMessage); question.value = ""; addMessage("assistant", "");
+  try {
+    if (props.legacy) {
+      await new Promise<void>((resolve, reject) => {
+        const events = new EventSource(`/api/assistant/chat?chatId=${encodeURIComponent(chatId)}&userMessage=${encodeURIComponent(userMessage)}`);
+        events.onmessage = event => appendMessage(event.data);
+        events.onerror = () => { events.close(); resolve(); };
+        abort.signal.addEventListener('abort', () => { events.close(); resolve(); }, { once: true });
+      });
+    } else {
+      const response = await api('/api/assistant/chat', { method: 'POST', body: JSON.stringify({ chatId, userMessage }), signal: abort.signal });
+      await consumeChat(response, appendMessage);
+    }
+  } catch (error: any) { if (!abort.signal.aborted) { appendMessage('\n' + error.message); message.error(error.message); } }
+  finally { lock.value = false; if (!abort.signal.aborted) await bookings(); }
 }
-
-function bookings() {
-  getBookings({}).then((res) => {
-    bookingInfo.dataSource = res;
-  });
+async function bookings() {
+  try { bookingInfo.dataSource = await json('/api/bookings'); }
+  catch (error: any) { if (!abort.signal.aborted) message.error(error.message); }
 }
 
 let __null = PRIMARY_COLOR;

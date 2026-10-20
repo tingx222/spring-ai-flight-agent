@@ -3,7 +3,7 @@ import enUS from "ant-design-vue/es/locale/en_US";
 import zhCN from "ant-design-vue/es/locale/zh_CN";
 import dayjs from "dayjs";
 import { PRIMARY_COLOR } from "@/base/constants";
-import home from "@/views/home/index.vue";
+import Portal from "./Portal.vue";
 dayjs.locale("en");
 </script>
 
@@ -16,7 +16,7 @@ dayjs.locale("en");
       },
     }"
   >
-    <home></home>
+    <Portal />
   </a-config-provider>
 </template>
 

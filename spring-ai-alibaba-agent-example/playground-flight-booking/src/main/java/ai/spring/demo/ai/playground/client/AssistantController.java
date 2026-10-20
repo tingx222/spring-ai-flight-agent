@@ -26,6 +26,7 @@ import reactor.core.publisher.Flux;
 
 @RequestMapping("/api/assistant")
 @RestController
+@org.springframework.context.annotation.Profile("!secure")
 public class AssistantController {
 
 	private final CustomerSupportAssistant agent;

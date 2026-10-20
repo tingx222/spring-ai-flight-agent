@@ -12,11 +12,14 @@ public class OperationConfirmationService {
     public static final String CHAT = "confirmationChatId", TURN = "confirmationTurnId";
     private final FlightBookingService service;
     private final Clock clock;
+    @Autowired(required = false)
+    private ai.spring.demo.ai.playground.auth.BookingAccessService access;
     private final Map<String, Pending> pending = new HashMap<>();
     private static final Duration TTL = Duration.ofMinutes(5);
     private static class Pending {
         String turn, action, date, preview, reply;
         BookingDetails expected;
+        ai.spring.demo.ai.playground.auth.UserIdentity identity;
         Instant expires;
         boolean shown, consumed;
     }
@@ -33,8 +36,15 @@ public class OperationConfirmationService {
     }
     public synchronized void invalidate(String chat) { pending.remove(chat); }
     public synchronized String preview(String action, String number, String name, String date, String from, String to, ToolContext context) {
+        if (access == null) return previewAuthorized(action, number, name, date, from, to, context);
+        var identity = access.identity(context);
+        return access.execute(identity, number, () -> previewAuthorized(action, number, name, date, from, to, context));
+    }
+    private String previewAuthorized(String action, String number, String name, String date, String from, String to, ToolContext context) {
         // 新的方案尝试先撤销旧方案，即使新参数被业务校验拒绝也不能回退执行旧方案。
         if (context != null && context.getContext().get(CHAT) instanceof String previousChat) pending.remove(previousChat);
+        var identity = access == null ? null : access.identity(context);
+        if (access != null) access.require(identity, number);
         // 先做业务校验；被拒绝的请求不产生可确认方案。
         BookingDetails target = action.equals("CHANGE") ? service.previewChange(number,name,date,from,to) : service.previewCancel(number,name);
         if (action.equals("CANCEL") && target.bookingStatus() == ai.spring.demo.ai.playground.data.BookingStatus.CANCELLED) return "订单已取消，无需重复操作。";
@@ -53,6 +63,7 @@ public class OperationConfirmationService {
         p.preview="请确认操作方案（5分钟内有效）：\n订单："+number+"，乘机人："+name+"\n航线："+p.expected.from()+"→"+p.expected.to()
             +"\n操作："+(action.equals("CHANGE") ? "改签，"+p.expected.date()+" → "+p.date : "取消，原出发日期"+p.expected.date())
             +"\n条款费用："+fee+"美元；本项目未实际扣费或退款。\n订单尚未修改。回复“确认”或“是”执行；回复“算了”撤销。";
+        p.identity=identity;
         pending.put(chat,p);return p.preview;
     }
     public synchronized boolean hasPreview(String chat,String turn) {
@@ -62,14 +73,19 @@ public class OperationConfirmationService {
         if (!hasPreview(chat,turn)) return null;
         Pending p=pending.get(chat);p.shown=true;return p.preview;
     }
-    public synchronized String confirm(String chat) {
+    public synchronized String confirm(String chat) { return confirm(chat, null); }
+    public synchronized String confirm(String chat, ai.spring.demo.ai.playground.auth.UserIdentity identity) {
         Pending p=pending.get(chat);
         if (p==null) return "当前没有待确认的操作方案，请先告诉我需要改签或取消哪笔订单。";
+        if (access != null && (identity == null || !identity.equals(p.identity))) return "当前登录身份与方案不匹配，请重新生成预览。";
         if (p.consumed) return "该方案已处理，无需重复确认。"+p.reply;
         if (!p.shown) return "方案尚未展示，请先查看完整预览再确认，订单未修改。";
         if (!clock.instant().isBefore(p.expires)) { pending.remove(chat);return "方案已过期，订单未修改。请重新生成预览。"; }
         p.consumed=true;
-        try { p.reply=service.executeConfirmed(p.expected,p.action,p.date); }
+        try {
+            p.reply=access == null ? service.executeConfirmed(p.expected,p.action,p.date) :
+                access.execute(identity,p.expected.bookingNumber(),() -> service.executeConfirmed(p.expected,p.action,p.date));
+        }
         catch (IllegalArgumentException e) { p.reply="未执行："+e.getMessage(); }
         catch (RuntimeException e) {
             p.reply="执行遇到系统异常。请先核对订单与审计结果，再重新生成方案；请勿重复确认旧方案。";

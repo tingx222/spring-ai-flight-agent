@@ -16,12 +16,15 @@ import org.springframework.transaction.support.TransactionTemplate;
  * MySQL 数据库版的订单存储实现。
  * 只有在启动参数激活了 "mysql" 环境（--spring.profiles.active=mysql）时才会生效。
  */
+@org.springframework.boot.sql.init.dependency.DependsOnDatabaseInitialization
 @Repository
 @Profile("mysql")
 public class JdbcBookingRepository implements BookingRepository {
 
     private final JdbcTemplate jdbc;
     private final TransactionTemplate transactions;
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private ai.spring.demo.ai.playground.auth.AuditActor actor;
 
     /**
      * 核心工具：将数据库查出来的 ResultSet（一行行数据），映射转换成 Java 的 Booking 对象。
@@ -179,6 +182,12 @@ public class JdbcBookingRepository implements BookingRepository {
      * 写入审计日志（记录谁在什么时候干了什么，操作前长什么样，操作后长什么样）。
      */
     public void appendAudit(BookingAuditRecord audit) {
+        if (actor != null) {
+            jdbc.update("INSERT INTO booking_audit (booking_number,action,result,message,occurred_at,before_data,after_data,actor_user_id) VALUES (?,?,?,?,?,?,?,?)",
+                audit.bookingNumber(),audit.action(),audit.result(),audit.message(),java.sql.Timestamp.from(audit.occurredAt()),
+                BookingAuditRecord.encode(audit.before()),BookingAuditRecord.encode(audit.after()),actor.currentId());
+            return;
+        }
         jdbc.update("INSERT INTO booking_audit (booking_number, action, result, message, occurred_at, before_data, after_data) VALUES (?, ?, ?, ?, ?, ?, ?)",
                 audit.bookingNumber(), audit.action(), audit.result(), audit.message(), java.sql.Timestamp.from(audit.occurredAt()),
                 BookingAuditRecord.encode(audit.before()), BookingAuditRecord.encode(audit.after()));

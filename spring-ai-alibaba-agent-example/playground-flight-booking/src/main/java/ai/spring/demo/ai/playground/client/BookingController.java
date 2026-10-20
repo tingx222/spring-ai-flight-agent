@@ -27,6 +27,7 @@ import java.util.List;
 
 @Controller
 @RequestMapping("/")
+@org.springframework.context.annotation.Profile("!secure")
 public class BookingController {
 
 	private final FlightBookingService flightBookingService;

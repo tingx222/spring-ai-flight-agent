@@ -63,3 +63,6 @@ spring-ai-alibaba-multi-model-example/dashscope-multi-model/src/main/resources/m
 *.hprof
 **/dist/
 **/out/
+
+# TypeScript incremental build cache
+*.tsbuildinfo

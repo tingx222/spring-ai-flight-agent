@@ -1,0 +1,2 @@
+# Bundler output can contain significant whitespace inside library template literals.
+**/src/main/resources/static/assets/* linguist-generated=true -whitespace
